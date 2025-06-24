@@ -5,12 +5,12 @@ import {
 	useActiveCode,
 	useSandpack,
 } from '@codesandbox/sandpack-react';
-import { usePHP } from './php';
+import { useCodeSniffer } from './php';
 import { Box, Center, Flex, Spinner, useColorMode } from '@chakra-ui/react';
 import type { ReactElement } from 'react';
 import * as React from 'react';
 import MonacoEditor, { type OnChange } from '@monaco-editor/react';
-import { Format } from './format';
+import { CodingStandard } from './format';
 import debounce from 'debounce';
 
 function LoadSpinner() {
@@ -49,39 +49,38 @@ function PhpEditor() {
 	);
 }
 
-function PhpPreview(params: { version: Version; format: Format }) {
+function CodeSnifferResults(params: { version: Version; standard: CodingStandard }) {
 	const { sandpack } = useSandpack();
 	const { files, activeFile } = sandpack;
 	const code = files[activeFile].code;
-	const [loading, result] = usePHP(params.version, code);
+	const [loading, result] = useCodeSniffer(params.version, code, params.standard);
 
 	if (loading) {
 		return <LoadSpinner />;
 	}
-	if (params.format === 'console') {
-		return (
+
+	return (
+		<Box
+			height="100%"
+			width="100%"
+			p={4}
+			bg="gray.50"
+			borderRadius="md"
+			overflow="auto"
+		>
 			<pre
 				style={{
 					whiteSpace: 'pre-wrap',
-					overflow: 'scroll',
-					width: '100%',
-					height: '100%',
+					fontSize: '14px',
+					fontFamily: 'Monaco, Consolas, "Courier New", monospace',
+					margin: 0,
+					color: result.includes('✅') ? '#22c55e' : result.includes('Error:') ? '#ef4444' : '#374151',
 				}}
-				data-testid="preview-console"
+				data-testid="codesniffer-results"
 			>
 				{result}
 			</pre>
-		);
-	}
-
-	return (
-		<iframe
-			srcDoc={result}
-			height="100%"
-			width="100%"
-			sandbox=""
-			data-testid="preview-html"
-		/>
+		</Box>
 	);
 }
 
@@ -124,7 +123,9 @@ function EditorLayout(params: { Editor: ReactElement; Preview: ReactElement }) {
 					height={{ base: '50%', lg: '100%' }}
 					width={{ base: '100%', lg: '50%' }}
 					style={{
-						backgroundColor: 'white',
+						backgroundColor: '#f9fafb',
+						border: '1px solid #e5e7eb',
+						borderRadius: '8px',
 					}}
 				>
 					{params.Preview}
@@ -137,7 +138,7 @@ function EditorLayout(params: { Editor: ReactElement; Preview: ReactElement }) {
 export function Editor(params: {
 	initCode: string;
 	version: Version;
-	format: Format;
+	standard: CodingStandard;
 	onChangeCode: (code: string) => void;
 }) {
 	return (
@@ -152,9 +153,9 @@ export function Editor(params: {
 			<EditorLayout
 				Editor={<PhpEditor />}
 				Preview={
-					<PhpPreview
+					<CodeSnifferResults
 						version={params.version}
-						format={params.format}
+						standard={params.standard}
 					/>
 				}
 			/>

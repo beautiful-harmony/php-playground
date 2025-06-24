@@ -18,12 +18,12 @@ import { Version, asVersion } from './php-wasm/php';
 import SelectPHP from './select';
 import { Editor } from './editor';
 import { BellIcon } from '@chakra-ui/icons';
-import { Format, SelectFormat } from './format';
+import { CodingStandard, SelectCodingStandard } from './format';
 
 type UrlState = {
 	v: Version;
 	c: string;
-	f: Format;
+	s: CodingStandard;
 };
 
 export default function App() {
@@ -31,36 +31,36 @@ export default function App() {
 	const initCode =
 		lzstring.decompressFromEncodedURIComponent(
 			searchParams.get('c') ?? ''
-		) ?? '<?php\n// example code\nphpinfo();';
+		) ?? '<?php\n// Example PHP code for coding standard check\nclass exampleClass {\n    public function test(){\n        echo "hello world";\n    }\n}';
 
 	const currentVersion = asVersion(searchParams.get('v')) ?? '8.4';
 
 	const { colorMode, toggleColorMode } = useColorMode();
 
-	const currentFormat = (searchParams.get('f') as Format) ?? 'html';
+	const currentStandard = (searchParams.get('s') as CodingStandard) ?? 'PSR12';
 
 	function updateVersion(v: Version) {
 		const currentState = history.state as UrlState | null;
 		const code = lzstring.decompressFromEncodedURIComponent(
 			currentState?.c ?? initCode
 		);
-		const format = currentState?.f ?? currentFormat;
+		const standard = currentState?.s ?? currentStandard;
 		if (code == null) {
 			return;
 		}
 		setSearchParams({
 			v: v,
 			c: lzstring.compressToEncodedURIComponent(code),
-			f: format,
+			s: standard,
 		});
-		setHistory(code, v, format);
+		setHistory(code, v, standard);
 	}
 
-	function setHistory(code: string, version: Version, format: Format) {
+	function setHistory(code: string, version: Version, standard: CodingStandard) {
 		const state: UrlState = {
 			c: lzstring.compressToEncodedURIComponent(code),
 			v: version,
-			f: format,
+			s: standard,
 		};
 		const urlSearchParam = new URLSearchParams(state).toString();
 		// Only push to history.
@@ -71,12 +71,12 @@ export default function App() {
 	useEffect(
 		function () {
 			updateVersion(currentVersion);
-			updateFormat(currentFormat);
+			updateStandard(currentStandard);
 		},
-		[currentVersion, currentFormat]
+		[currentVersion, currentStandard]
 	);
 
-	function updateFormat(format: Format) {
+	function updateStandard(standard: CodingStandard) {
 		const currentState = history.state as UrlState | null;
 		const code = lzstring.decompressFromEncodedURIComponent(
 			currentState?.c ?? initCode
@@ -88,40 +88,21 @@ export default function App() {
 		setSearchParams({
 			v: version,
 			c: lzstring.compressToEncodedURIComponent(code),
-			f: format,
+			s: standard,
 		});
-		setHistory(code, version, format);
+		setHistory(code, version, standard);
 	}
 
 	return (
 		<main style={{ margin: '16px' }}>
 			<Flex marginTop="8px" marginBottom="8px" gap="16px">
 				<Box marginTop="auto" marginBottom="auto">
-					<Link
-						href="https://github.com/glassmonkey/php-playground/issues"
-						isExternal
-					>
-						<Flex>
-							<img
-								src="octocat.png"
-								width="40px"
-								height="40px"
-								style={{
-									marginTop: 'auto',
-									marginBottom: 'auto',
-								}}
-							/>
-							<Text
-								fontSize="sm"
-								style={{
-									marginTop: 'auto',
-									marginBottom: 'auto',
-								}}
-							>
-								&lt; Request and Report
-							</Text>
-						</Flex>
-					</Link>
+					<Text fontSize="lg" fontWeight="bold" color="blue.500">
+						🔍 PHP CodeSniffer Playground
+					</Text>
+					<Text fontSize="xs" color="gray.500">
+						Check your PHP code against coding standards
+					</Text>
 				</Box>
 				<Spacer />
 				<Flex direction={{ base: 'column', lg: 'row' }} gap="16px">
@@ -158,18 +139,18 @@ export default function App() {
 							mr={2}
 						/>
 					</Flex>
-					<SelectFormat
-						format={currentFormat}
-						updateFormat={updateFormat}
+					<SelectCodingStandard
+						standard={currentStandard}
+						updateStandard={updateStandard}
 					/>
 				</Flex>
 			</Flex>
 			<Editor
 				initCode={initCode}
 				version={currentVersion}
-				format={currentFormat}
+				standard={currentStandard}
 				onChangeCode={function (code: string) {
-					setHistory(code, currentVersion, currentFormat);
+					setHistory(code, currentVersion, currentStandard);
 				}}
 			/>
 		</main>

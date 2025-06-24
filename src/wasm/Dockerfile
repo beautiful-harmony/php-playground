@@ -1,9 +1,13 @@
 # Originally forked from https://github.com/WordPress/wordpress-playground
-# ubuntu:lunar supports amd64 and arm64 (Apple Silicon) while
+# ubuntu:jammy supports amd64 and arm64 (Apple Silicon) while
 # emscripten/emsdk:3.1.24 supports amd64 only.
-FROM ubuntu:lunar as emscripten
+FROM ubuntu:jammy as emscripten
 
 SHELL ["/bin/bash", "-c"]
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Tokyo
 
 ENV PKG_CONFIG_PATH /root/lib/lib/pkgconfig
 ENV TIMER "(which pv > /dev/null && pv --name '${@}' || cat)"
@@ -12,8 +16,12 @@ WORKDIR /root
 RUN mkdir lib
 
 RUN set -euxo pipefail;\
+    # Set timezone to avoid interactive prompts
+    export DEBIAN_FRONTEND=noninteractive; \
+    export TZ=Asia/Tokyo; \
     apt-get update; \
     apt-get --no-install-recommends -y install \
+    tzdata \
     build-essential \
     automake \
     autoconf \
@@ -31,7 +39,10 @@ RUN set -euxo pipefail;\
     wget \
     unzip \
     cmake \
-    python3
+    python3 && \
+    # Configure timezone
+    ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata
 
 # Install Emscripten from the repository. We'd use the official
 # Docker image, but there is no arm64 image available which makes
@@ -269,6 +280,66 @@ RUN git clone https://github.com/php/php-src.git php-src \
     --single-branch          \
     --depth 1;
 
+# Install Composer and PHP_CodeSniffer
+FROM emscripten AS emscripten-composer
+ARG PHP_VERSION
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    export TZ=Asia/Tokyo && \
+    apt-get update && \
+    apt-get install -y php-cli php-curl php-zip php-xml php-mbstring
+# Install Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+# Create a project directory and install CodeSniffer
+RUN mkdir -p /root/codesniffer
+WORKDIR /root/codesniffer
+# Create composer.json
+RUN echo '{\
+    "require": {\
+        "squizlabs/php_codesniffer": "^3.7"\
+    }\
+}' > composer.json
+# Install PHP_CodeSniffer
+RUN composer install --no-dev --optimize-autoloader
+# Prepare CodeSniffer files for WebAssembly
+RUN mkdir -p /root/phpcs-wasm
+# Copy the entire vendor directory with CodeSniffer
+RUN cp -r vendor /root/phpcs-wasm/
+# Create a simple integration script for CodeSniffer
+RUN echo '<?php\
+$vendorDir = __DIR__ . "/vendor";\
+if (file_exists($vendorDir . "/autoload.php")) {\
+    require_once $vendorDir . "/autoload.php";\
+}\
+\
+function runCodeSniffer($file, $standard = "PSR12") {\
+    if (!class_exists("PHP_CodeSniffer\\Config")) {\
+        return "Error: PHP_CodeSniffer not available";\
+    }\
+    \
+    $config = new PHP_CodeSniffer\\Config();\
+    $config->standards = [$standard];\
+    $config->files = [$file];\
+    $config->verbosity = 0;\
+    $config->showProgress = false;\
+    $config->interactive = false;\
+    $config->cache = false;\
+    \
+    $runner = new PHP_CodeSniffer\\Runner();\
+    $runner->config = $config;\
+    $runner->init();\
+    \
+    ob_start();\
+    $exitCode = $runner->runPHPCS();\
+    $output = ob_get_clean();\
+    \
+    if ($exitCode === 0) {\
+        return "✅ No coding standard violations found!";\
+    } else {\
+        return $output;\
+    }\
+}\
+' > /root/phpcs-wasm/phpcs-runner.php
+
 
 # Build PHP
 FROM emscripten AS emscripten-php
@@ -303,6 +374,7 @@ RUN touch /root/.configure-flags && \
     touch /root/.EXPORTED_FUNCTIONS
 
 COPY --from=emscripten-php-src /root/php-src /root/php-src
+COPY --from=emscripten-composer /root/phpcs-wasm /root/phpcs-wasm
 RUN cd php-src && ./buildconf --force
 
 # Add libzip and zlib files if needed
@@ -315,7 +387,7 @@ RUN if [ "$WITH_LIBZIP" = "yes" ]; then \
             /root/replace.sh 's/ZEND_MODULE_GLOBALS_CTOR_N/(void (*)(void *))ZEND_MODULE_GLOBALS_CTOR_N/g' /root/php-src/ext/zlib/zlib.c; \
         fi;\
         if [[ "${PHP_VERSION:0:1}" -le "7" && "${PHP_VERSION:2:1}" -le "3" ]] || [ "${PHP_VERSION:0:1}" -le "5" ]; then \
-            apt install -y zlib1g zlib1g-dev; \
+            DEBIAN_FRONTEND=noninteractive apt install -y zlib1g zlib1g-dev; \
             # https://php-legacy-docs.zend.com/manual/php5/en/zlib.installation
             echo -n ' --with-zlib --with-zlib-dir=/root/lib --enable-zip --with-libzip=/root/lib ' >> /root/.php-configure-flags; \
             echo -n ' -I /root/zlib -I /root/libzip ' >> /root/.emcc-php-wasm-flags; \
@@ -412,7 +484,7 @@ RUN if [[ "${PHP_VERSION:0:1}" -le "7" && "${PHP_VERSION:2:1}" -le "3" ]] || [ "
         ln -s /usr/local/bison/bin/bison /usr/bin/bison && \
         ln -s /usr/local/bison/bin/yacc /usr/bin/yacc; \
     else \
-        apt install -y bison; \
+        DEBIAN_FRONTEND=noninteractive apt install -y bison; \
     fi;
 
 # Add mbstring if needed
@@ -864,6 +936,7 @@ RUN source /root/emsdk/emsdk_env.sh && \
 "_wasm_set_skip_shebang" '"$(cat /root/.EXPORTED_FUNCTIONS)"']'; \
     emcc -O3 \
     --js-library /root/phpwasm-emscripten-library.js \
+    --preload-file /root/phpcs-wasm@/phpcs \
     -I .  \
     -I ext   \
     -I ext/json   \
