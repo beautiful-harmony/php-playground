@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { usePHP } from '../php';
+import { useCodeSniffer } from '../php';
 // @ts-ignore
 import { mockFetch } from 'vi-fetch';
 // @ts-ignore
@@ -19,7 +19,7 @@ it.skip('should increment counter', async () => {
 	mockFetch('GET', new RegExp(pattern)).willResolve(data.buffer);
 	// When running on jsdom, it does not work well because it depends on the dom.
 	// Runtime error occurs.
-	const { result } = renderHook(() => usePHP(v, code));
+	const { result } = renderHook(() => useCodeSniffer(v, code, 'PSR12'));
 	const [loading, value] = result.current;
 	expect(loading).toBe(true);
 	expect(value).toBe('');

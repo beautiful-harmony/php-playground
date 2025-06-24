@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PHP Playground is a web application that allows users to execute PHP code in real-time using WebAssembly. The project compiles multiple PHP versions (5.6-8.4) to WebAssembly and provides an interactive browser-based PHP development environment.
+PHP CodeSniffer Playground is a web application that allows users to check PHP code against coding standards in real-time using WebAssembly. The project compiles multiple PHP versions (5.6-8.4) to WebAssembly and provides an interactive browser-based PHP code quality checking environment using PHP_CodeSniffer with PSR-12 and PEAR coding standards.
 
 ## Development Commands
 
@@ -14,9 +14,16 @@ PHP Playground is a web application that allows users to execute PHP code in rea
 - `npm run preview` - Build and preview production version on port 8888
 
 ### WebAssembly Build Commands
-- `make build` - Build all PHP WebAssembly versions (heavy operation, runs in parallel)
-- `make build-wasm PHP_VERSION=8.2` - Build specific PHP version to WebAssembly
+- `make build` - Build all PHP WebAssembly versions with PHP_CodeSniffer (heavy operation, runs in parallel)
+- `make build-wasm PHP_VERSION=8.2` - Build specific PHP version to WebAssembly with CodeSniffer
 - Individual version builds: `make build-5.6`, `make build-7.0`, etc.
+
+### PHP_CodeSniffer Integration
+The WebAssembly build process now includes PHP_CodeSniffer:
+- Composer installs `squizlabs/php_codesniffer` during Docker build
+- CodeSniffer files are preloaded into WebAssembly filesystem at `/phpcs/`
+- Runtime includes a helper script at `/phpcs/phpcs-runner.php` for easy integration
+- Supports PSR-12 and PEAR coding standards
 
 ### Testing Commands
 - `npm run test` - Run unit tests with Vitest
@@ -61,14 +68,17 @@ PHP Playground is a web application that allows users to execute PHP code in rea
 **Multi-Version PHP Support:**
 The application supports PHP versions 5.6 through 8.4, with WebAssembly binaries and JavaScript loaders for each version stored in `assets/` and `src/wasm-assets/` respectively.
 
-**Code Execution Flow:**
+**Code Checking Flow:**
 1. User enters PHP code in Monaco Editor
-2. Code is processed through `usePHP` hook in `src/php.ts`
+2. Code is processed through `useCodeSniffer` hook in `src/php.ts`
 3. PHP WebAssembly runtime is initialized for selected version
-4. Code is executed and output is displayed in HTML iframe or console format
+4. User's PHP code is written to `/tmp/check.php` in WebAssembly filesystem
+5. CodeSniffer runner script (`/phpcs/phpcs-runner.php`) is executed with selected standard
+6. PHP_CodeSniffer analyzes the code against PSR-12 or PEAR standards
+7. Results are displayed in a formatted output panel showing violations or success message
 
 **URL State Management:**
-The app uses URL parameters with LZ-string compression to store and share code, version, and format settings.
+The app uses URL parameters with LZ-string compression to store and share code, version, and coding standard settings.
 
 ### Build Pipeline
 

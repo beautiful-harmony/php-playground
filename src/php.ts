@@ -1,5 +1,6 @@
 import { PHP, startPHP, Version } from './php-wasm/php';
 import { useEffect, useState } from 'react';
+import { CodingStandard } from './format';
 
 async function loadPHPLoaderModule(v: Version) {
 	switch (v) {
@@ -50,33 +51,52 @@ export async function initPHP(v: Version) {
 	return startPHP(v, PHPLoaderModule, 'WEB', {});
 }
 
-export async function runPHP(php: PHP, code: string) {
+export async function runCodeSniffer(php: PHP, code: string, standard: CodingStandard) {
+	// Write the PHP code to a temporary file
+	php.writeFile('/tmp/check.php', code);
+	
+	// Create a CodeSniffer check script that uses the preloaded files
+	const checkScript = `<?php
+// Include the CodeSniffer runner script
+require_once '/phpcs/phpcs-runner.php';
+
+$file = '/tmp/check.php';
+$standard = '${standard}';
+
+try {
+    $result = runCodeSniffer($file, $standard);
+    echo $result;
+} catch (Exception $e) {
+    echo "Error running CodeSniffer: " . $e->getMessage();
+}
+`;
+
 	const output = php.run({
-		code: code,
+		code: checkScript,
 	});
 	return new TextDecoder().decode(output.body);
 }
 
-// Convert code to PHP code
-export function convertCodeToPhpPlayground(code: string) {
-	const phpPrefixPattern = /^<\?(php)?\s+/g;
-
+// Convert code to PHP code for CodeSniffer checking
+export function convertCodeForCodeSniffer(code: string) {
+	const phpPrefixPattern = /^<\?(php)?\s*/g;
 	const hasPhpPrefix = code.match(phpPrefixPattern);
-	let phpCode = code.replace(phpPrefixPattern, '');
-	// Add PHP tag if not exists
+	
+	// Ensure proper PHP opening tag for CodeSniffer
 	if (!hasPhpPrefix) {
-		phpCode = '?>' + phpCode;
+		return '<?php\n' + code;
 	}
-	return phpCode;
+	return code;
 }
 
-export function usePHP(version: Version, code: string): [boolean, string] {
+export function useCodeSniffer(version: Version, code: string, standard: CodingStandard): [boolean, string] {
 	const [php, setPHP] = useState<PHP | null>(null);
 	const [loading, setLoading] = useState<boolean>(false);
 	const [internalCode, setInternalCode] = useState<string>('');
+	const [internalStandard, setInternalStandard] = useState<CodingStandard>(standard);
 	const [result, setResult] = useState<string>('');
 
-	const phpCode = convertCodeToPhpPlayground(code);
+	const phpCode = convertCodeForCodeSniffer(code);
 
 	useEffect(
 		function () {
@@ -88,29 +108,39 @@ export function usePHP(version: Version, code: string): [boolean, string] {
 				return;
 			}
 
-			if (internalCode != phpCode) {
+			if (internalCode != phpCode || internalStandard != standard) {
 				setLoading(true);
-
 				setInternalCode(phpCode);
+				setInternalStandard(standard);
 				return;
 			}
+			
 			if (!loading) {
 				return;
 			}
 
 			if (internalCode == '') {
-				setResult('empty data');
+				setResult('Please enter PHP code to check');
 				setLoading(false);
 				return;
 			}
 
 			setTimeout(async function () {
-				const info = await runPHP(php, internalCode);
-				setResult(info);
+				try {
+					const info = await runCodeSniffer(php, internalCode, internalStandard);
+					setResult(info);
+				} catch (error) {
+					// Check if this is due to missing CodeSniffer
+					if (internalCode.includes('class_exists') || internalCode.includes('runCodeSniffer')) {
+						setResult('Error: PHP_CodeSniffer not available.\n\nTo enable CodeSniffer functionality:\n1. Build WebAssembly with: make build\n2. This will include PHP_CodeSniffer in the WASM build\n\nCurrently showing UI structure for development.');
+					} else {
+						setResult('Error: ' + (error instanceof Error ? error.message : String(error)));
+					}
+				}
 				setLoading(false);
 			}, 15);
 		},
-		[php, code, internalCode, loading, version]
+		[php, code, internalCode, loading, version, standard, internalStandard]
 	);
 
 	return [loading, result];

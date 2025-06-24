@@ -1,5 +1,5 @@
 import { expect, it, describe } from 'vitest';
-import {convertCodeToPhpPlayground, initPHP, runPHP} from '../php';
+import {convertCodeForCodeSniffer, initPHP, runCodeSniffer} from '../php';
 // @ts-ignore
 import { mockFetch } from 'vi-fetch';
 // @ts-ignore
@@ -20,7 +20,7 @@ describe('load wasm files', async function () {
 			// Runtime error occurs, but you can ignore it because it is a problem with the way wasm is loaded.
 			const sut = await initPHP(v);
 			expect(sut.version).toBe(v);
-			const actual = await runPHP(sut, 'echo(1);');
+			const actual = await runCodeSniffer(sut, 'echo(1);', 'PSR12');
 			expect(actual).toBe('1');
 		});
 	});
@@ -35,7 +35,7 @@ describe('show phpinfo()', async function () {
 			// Runtime error occurs, but you can ignore it because it is a problem with the way wasm is loaded.
 			const sut = await initPHP(v);
 			expect(sut.version).toBe(v);
-			let actual = await runPHP(sut, 'phpinfo();');
+			let actual = await runCodeSniffer(sut, 'phpinfo();', 'PSR12');
 			// Shrink the request time
 			actual = actual.replace(
 				/(<tr>.+?REQUEST_TIME_FLOAT.+?<td.+?>)([\d.]+)(<\/td><\/tr>)/g,
@@ -50,21 +50,18 @@ describe('show phpinfo()', async function () {
 	});
 });
 
-describe('convert code to php code for wasm', async function () {
+describe('convert code to php code for CodeSniffer', async function () {
 
 	const testCases = [
-		{"input": "<? echo(1);", "expected": "echo(1);"},
-		{"input": "<?php echo(1);", "expected": "echo(1);"},
-		{"input": "<?php\n echo(1);", "expected": "echo(1);"},
-		{"input": "<?\n echo(1);", "expected": "echo(1);"},
-		{"input": "Hello, World", "expected": "?>Hello, World"},
-		{"input": "<body><?echo 1+1?></body>", "expected": "?><body><?echo 1+1?></body>"},
-		{"input": "<? declare(strict_types=1); echo 1;", "expected": "declare(strict_types=1); echo 1;"},
-		{"input": "<body><? declare(ticks=1); echo 1+1?></body>", "expected": "?><body><? declare(ticks=1); echo 1+1?></body>"},
+		{"input": "echo(1);", "expected": "<?php\necho(1);"},
+		{"input": "<?php echo(1);", "expected": "<?php echo(1);"},
+		{"input": "<?php\n echo(1);", "expected": "<?php\n echo(1);"},
+		{"input": "<?\n echo(1);", "expected": "<?\n echo(1);"},
+		{"input": "class Test {}", "expected": "<?php\nclass Test {}"},
 	]
 
 	it.each(testCases)('input: %s to %s', async function (testCase) {
-		const actual = convertCodeToPhpPlayground(testCase.input);
+		const actual = convertCodeForCodeSniffer(testCase.input);
 		expect(actual).toBe(testCase.expected);
 	})
 })
