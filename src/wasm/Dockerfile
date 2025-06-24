@@ -5,6 +5,10 @@ FROM ubuntu:jammy as emscripten
 
 SHELL ["/bin/bash", "-c"]
 
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Tokyo
+
 ENV PKG_CONFIG_PATH /root/lib/lib/pkgconfig
 ENV TIMER "(which pv > /dev/null && pv --name '${@}' || cat)"
 
@@ -12,8 +16,12 @@ WORKDIR /root
 RUN mkdir lib
 
 RUN set -euxo pipefail;\
+    # Set timezone to avoid interactive prompts
+    export DEBIAN_FRONTEND=noninteractive; \
+    export TZ=Asia/Tokyo; \
     apt-get update; \
     apt-get --no-install-recommends -y install \
+    tzdata \
     build-essential \
     automake \
     autoconf \
@@ -31,7 +39,10 @@ RUN set -euxo pipefail;\
     wget \
     unzip \
     cmake \
-    python3
+    python3 && \
+    # Configure timezone
+    ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata
 
 # Install Emscripten from the repository. We'd use the official
 # Docker image, but there is no arm64 image available which makes
@@ -272,7 +283,10 @@ RUN git clone https://github.com/php/php-src.git php-src \
 # Install Composer and PHP_CodeSniffer
 FROM emscripten AS emscripten-composer
 ARG PHP_VERSION
-RUN apt-get update && apt-get install -y php-cli php-curl php-zip php-xml php-mbstring
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    export TZ=Asia/Tokyo && \
+    apt-get update && \
+    apt-get install -y php-cli php-curl php-zip php-xml php-mbstring
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 # Create a project directory and install CodeSniffer
@@ -373,7 +387,7 @@ RUN if [ "$WITH_LIBZIP" = "yes" ]; then \
             /root/replace.sh 's/ZEND_MODULE_GLOBALS_CTOR_N/(void (*)(void *))ZEND_MODULE_GLOBALS_CTOR_N/g' /root/php-src/ext/zlib/zlib.c; \
         fi;\
         if [[ "${PHP_VERSION:0:1}" -le "7" && "${PHP_VERSION:2:1}" -le "3" ]] || [ "${PHP_VERSION:0:1}" -le "5" ]; then \
-            apt install -y zlib1g zlib1g-dev; \
+            DEBIAN_FRONTEND=noninteractive apt install -y zlib1g zlib1g-dev; \
             # https://php-legacy-docs.zend.com/manual/php5/en/zlib.installation
             echo -n ' --with-zlib --with-zlib-dir=/root/lib --enable-zip --with-libzip=/root/lib ' >> /root/.php-configure-flags; \
             echo -n ' -I /root/zlib -I /root/libzip ' >> /root/.emcc-php-wasm-flags; \
@@ -470,7 +484,7 @@ RUN if [[ "${PHP_VERSION:0:1}" -le "7" && "${PHP_VERSION:2:1}" -le "3" ]] || [ "
         ln -s /usr/local/bison/bin/bison /usr/bin/bison && \
         ln -s /usr/local/bison/bin/yacc /usr/bin/yacc; \
     else \
-        apt install -y bison; \
+        DEBIAN_FRONTEND=noninteractive apt install -y bison; \
     fi;
 
 # Add mbstring if needed
